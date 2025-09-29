@@ -1,0 +1,559 @@
+---
+title: "Analysis results"
+subtitle: 'Chapter "How Networks Facilitate Trust: A Synthesis on Control Effects" in the *Handbook of Trust and Social Networks*'
+author: Thom B. Volker, Vincent Buskens, Werner Raub
+format: docx
+date: "2025-09-29"
+---
+
+This document contains the analysis results for the chapter "How Networks Facilitate Trust:
+A Synthesis on Control Effects", written for the *Handbook of Trust and Social Networks*. 
+
+```{r, include=FALSE}
+options(knitr.kable.NA='')
+```
+
+
+
+```{r}
+#| label: run-analyses
+#| include: false
+#| eval: true
+
+set.seed(123)
+code <- list.files("analysis_scripts")
+
+lapply(code, function(x) {
+  print(x)
+  system(paste0("Rscript analysis_scripts/", x), 
+         intern = FALSE,
+         show.output.on.console = FALSE)
+})
+```
+
+
+```{r}
+#| label: store-results
+#| include: false
+
+set.seed(123)
+res_files <- list.files("results")
+res <- lapply(res_files, function(x) {
+  readRDS(paste0("results/", x))
+})
+
+res <- Map(\(x, y) {x$dyad <- y; x}, x = res, y = c(
+  c(BH04 = FALSE, 
+    BKO04 = FALSE, 
+    BKO05 = FALSE, 
+    BF09 = FALSE, 
+    BRV10 = TRUE, 
+    CDY11 = FALSE,
+    CRBC16 = TRUE, 
+    DHL13 = FALSE, 
+    DO09 = FALSE, 
+    DXL13 = FALSE, 
+    FBC19 = TRUE, 
+    K17 = TRUE,
+    K16 = FALSE, 
+    MBR12 = TRUE, 
+    PTKR12 = FALSE, 
+    SS06 = FALSE)
+))
+
+names(res) <- res_files
+```
+
+
+```{r}
+#| label: calculate-proportions
+#| include: false
+#| message: false
+library(dplyr)
+
+props <- lapply(res, \(x) {
+  if (length(x) < 3) {
+    coop_prop <- x$coop$prop
+    return(list(coop = coop_prop))
+  } else {
+    tf_prop <- x$tf$prop
+    tw_prop <- x$tw$prop
+    return(list(tf = tf_prop, tw = tw_prop))
+  }
+})
+
+comb_props <- purrr::map_dfr(props, \(x) {
+  if (length(x) < 2) {
+    tibble(Hypothesis = "Cooperation", 
+           NoEmb = x$coop[1,2,drop=TRUE], 
+           Emb = x$coop[2,2,drop=TRUE])
+  } else {
+    rbind(
+      tibble(Hypothesis = "Trustfulness", 
+                 NoEmb = x$tf[1,2,drop=TRUE], 
+                 Emb = x$tf[2,2,drop=TRUE]),
+      tibble(Hypothesis = "Trustworthiness", 
+                 NoEmb = x$tw[1,2,drop=TRUE], 
+                 Emb = x$tw[2,2,drop=TRUE])
+    )
+  }
+}, .id = "Study") |>
+  mutate(Hypothesis = factor(Hypothesis,
+                                       levels = c("Trustfulness",
+                                                  "Trustworthiness",
+                                                  "Cooperation"),
+                                       ordered = TRUE))
+```
+
+
+# Results
+
+*Table 1: Proportions of trustfulness, trustworthiness and cooperation in the different embeddedness conditions in the individual studies, with corresponding Bayes factors.* 
+
+```{r}
+#| label: tbl-calculate-bfs
+#| message: false
+#| echo: false
+#| tbl-colwidths: [45, 25, 13, 13, 13, 15]
+
+bfs <- purrr::map_dfr(res, \(x) {
+  if (length(x) < 3) {
+    tibble(Hypothesis = "Cooperation", 
+           DyadicEmb = x$dyad,
+           `$BF_{i,u}$` = x$coop$bf$fit$BF.u[1],
+           `$BF_{i,c}$` = x$coop$bf$fit$BF.c[1])
+  } else {
+    bind_rows(
+      Trustfulness = tibble(`$BF_{i,u}$` = x$tf$bf$fit$BF.u[1], 
+                            `$BF_{i,c}$` = x$tf$bf$fit$BF.c[1]),
+      Trustworthiness = tibble(`$BF_{i,u}$` = x$tw$bf$fit$BF.u[1], 
+                               `$BF_{i,c}$` = x$tw$bf$fit$BF.c[1]),
+      .id = "Hypothesis"
+    ) |> mutate(DyadicEmb = x$dyad)
+  }
+}, .id = "Study") |>
+  mutate(Hypothesis = factor(Hypothesis,
+                                       levels = c("Trustfulness",
+                                                  "Trustworthiness",
+                                                  "Cooperation"),
+                                       ordered = TRUE))
+
+left_join(comb_props, bfs) |>
+  mutate(Study = gsub(".rds", "", Study) |> gsub(pattern = "_", replacement = " "),
+         Study = paste0("$~~~$", Study),
+         Year = as.numeric(stringr::str_extract(Study, "[0-9]+")[[1]])) |>
+  select(-DyadicEmb) |>
+  bind_rows(
+    tibble(
+      Study = c("*Trustfulness*", "*Trustworthiness*", "*Cooperation*"),
+      Hypothesis = factor(c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE),
+      NoEmb = c(NA, NA, NA),
+      Emb = NoEmb,
+      `$BF_{i,u}$` = NoEmb,
+      `$BF_{i,c}$` = NoEmb,
+      Year = c(0,0,0)
+    )
+  ) |>
+  arrange(Hypothesis, Year) |>
+  select(-c(Hypothesis, Year)) |>
+  knitr::kable(format = "simple", digits = 2)
+```
+
+
+*Table 2: Aggregated Bayes factors for each hypothesis over the relevant studies against the unconstrained hypothesis ($BF_{i,u}$) and the complement hypothesis ($BF_{i,c}$).*
+
+```{r}
+#| label: aggregate-bfs
+#| message: false
+#| echo: false
+
+options(scipen = 100)
+
+bfs |>
+  group_by(Hypothesis) |>
+  summarize(across(c(`$BF_{i,u}$`, `$BF_{i,c}$`), prod)) |>
+  mutate(`$\\pi_{i,u}$` = `$BF_{i,u}$` / (1 + `$BF_{i,u}$`),
+         `$\\pi_{i,c}$` = `$BF_{i,c}$` / (1 + `$BF_{i,c}$`)) |>
+  knitr::kable(booktabs = TRUE, digits = 3)
+```
+
+```{r}
+#| label: robustness-sim
+#| echo: false
+#| message: false
+#| warning: false
+#| cache: true
+
+set.seed(123)
+
+simparam <- function(res) {
+  if (length(res) < 3) {
+    param <- strsplit(res$coop$bf$hypotheses, ">")[[1]][1]
+    param <- gsub(" ", "", param)
+    s <- matrix(c(res$coop$bf$Sigma[param,param]), 1, 1,
+                dimnames = list("b", "b"))
+    newcoef <- c(b = rnorm(1, 0, sqrt(s)))
+    newbf <- bain::bain(newcoef, hypothesis = "b>0",
+                        Sigma = s, n = res$coop$bf$n)
+    tibble(Hypothesis = "Cooperation", 
+           DyadicEmb = res$dyad,
+           `$BF_{i,u}$` = newbf$fit$BF.u[1],
+           `$BF_{i,c}$` = newbf$fit$BF.c[1])
+  } else {
+    paramtf <- gsub(" ", "", 
+                    strsplit(res$tf$bf$hypotheses, ">")[[1]][1])
+    paramtw <- gsub(" ", "", 
+                    strsplit(res$tw$bf$hypotheses, ">")[[1]][1])
+    stf <- matrix(c(res$tf$bf$Sigma[paramtf,paramtf]), 1, 1,
+                  dimnames = list("b", "b"))
+    stw <- matrix(c(res$tw$bf$Sigma[paramtw,paramtw]), 1, 1,
+                  dimnames = list("b", "b"))
+    newcoeftf <- c(b = rnorm(1,0,sqrt(stf)))
+    newcoeftw <- c(b = rnorm(1,0,sqrt(stw)))
+    newbftf <- bain::bain(newcoeftf, hypothesis = "b>0",
+                          Sigma = stf, n = res$tf$bf$n)
+    newbftw <- bain::bain(newcoeftw, hypothesis = "b>0",
+                          Sigma = stw, n = res$tw$bf$n)
+    bind_rows(
+      Trustfulness = tibble(`$BF_{i,u}$` = newbftf$fit$BF.u[1], 
+                            `$BF_{i,c}$` = newbftf$fit$BF.c[1]),
+      Trustworthiness = tibble(`$BF_{i,u}$` = newbftw$fit$BF.u[1], 
+                               `$BF_{i,c}$` = newbftw$fit$BF.c[1]),
+      .id = "Hypothesis"
+    ) |> mutate(DyadicEmb = res$dyad)
+  }
+}
+
+future::plan(future::multisession(workers = 16))
+
+replicatebfs <- furrr::future_map(1:20000, ~ {
+  purrr::map(res, \(x) try(simparam(x), silent = TRUE))
+}, .options = furrr::furrr_options(seed = TRUE), .progress = TRUE)
+
+future::plan(future::sequential())
+```
+
+```{r}
+#| label: fig-robustness
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-cap: "Simulated aggregated Bayes factor under the assumption that there is no effect in the population."
+
+sim_errors <- sapply(replicatebfs, \(x) {
+  any(sapply(x, \(y) inherits(y, "try-error"))) |
+    any(sapply(x, \(y) any(is.na(c(y$`$BF_{i,u}$`, y$`$BF_{i,c}$`)))))
+})
+
+validbfs <- replicatebfs[!sim_errors]
+
+sim <- purrr::map_dfr(validbfs, ~purrr::map_dfr(.x, \(y) y, .id = "Study"), .id = "Sim")
+
+sim_bfs <- sim |> 
+  group_by(Sim, Hypothesis) |>
+  summarize(across(c(`$BF_{i,u}$`, `$BF_{i,c}$`), prod))
+
+sim_bfs |>
+  tidyr::pivot_longer(cols = c(`$BF_{i,u}$`, `$BF_{i,c}$`), 
+                      names_to = "Alternative", 
+                      values_to = "PBF") |>
+  mutate(Alternative = factor(Alternative, 
+                             levels = c("$BF_{i,u}$", "$BF_{i,c}$"),
+                             labels = c("Unconstrained", "Complement")),
+         Hypothesis = factor(Hypothesis,
+                                    levels = c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE)) |>
+  ggplot2::ggplot(ggplot2::aes(x = log10(PBF))) +
+  ggplot2::geom_histogram() +
+  ggplot2::facet_grid(vars(Alternative), vars(Hypothesis)) +
+  ggplot2::geom_vline(
+    data = bind_rows(bfs |>
+                       group_by(Hypothesis) |>
+                       summarize(PBF = log10(prod(`$BF_{i,u}$`))) |>
+                       mutate(Alternative = "Unconstrained"),
+                     bfs |>
+                       group_by(Hypothesis) |>
+                       summarize(PBF = log10(prod(`$BF_{i,c}$`))) |>
+                       mutate(Alternative = "Complement")
+    ) |> mutate(Alternative = factor(Alternative, levels = c("Unconstrained", "Complement"))),
+    ggplot2::aes(xintercept = PBF)
+  ) +
+  ggplot2::theme_classic() +
+  ggplot2::ylab("Count") +
+  ggplot2::xlab("log(ABF)")
+```
+
+
+*Table 3: Probability of observing the obtained, or more extreme, amount of evidence for each hypothesis if there would not be a network control effect in the population.*
+
+```{r}
+#| label: pvals
+#| echo: false
+#| message: false
+
+
+left_join(sim, bfs, 
+          by = c("Study", "Hypothesis", "DyadicEmb"), 
+          copy = TRUE,
+          suffix = c("sim", "obs")) |>
+  mutate(Hypothesis = factor(Hypothesis, 
+                                    levels = c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE)) |>
+  group_by(Sim, Hypothesis) |>
+  summarize(across(c(`$BF_{i,u}$sim`, `$BF_{i,c}$sim`, `$BF_{i,u}$obs`, `$BF_{i,c}$obs`), prod)) |>
+  group_by(Hypothesis) |>
+  summarize(`$P(BF_{null, u} > BF_{obs, u})$` = mean(`$BF_{i,u}$sim` > `$BF_{i,u}$obs`),
+            `$P(BF_{null, c} > BF_{obs, c})$` = mean(`$BF_{i,c}$sim` > `$BF_{i,c}$obs`)) |> knitr::kable(booktabs = TRUE, digits = 3, escape = FALSE)
+```
+
+
+*Table 4: Aggregated Bayes factors given the presence or absence of dyadic embeddedness for each hypothesis over the relevant studies against the unconstrained hypothesis ($BF_{i,u}$) and the complement hypothesis ($BF_{i,c}$).*
+
+```{r}
+#| label: aggregate-bfs-dyadic
+#| message: false
+#| echo: false
+
+bfs |>
+  group_by(Hypothesis, DyadicEmb) |>
+  summarize(across(c(`$BF_{i,u}$`, `$BF_{i,c}$`), prod)) |>
+  mutate(Embeddedness = ifelse(DyadicEmb, "Dyadic", "No Dyadic")) |>
+  select(Hypothesis, Embeddedness, `$BF_{i,u}$`, `$BF_{i,c}$`) |>
+  knitr::kable(booktabs = TRUE, digits = 2, escape = FALSE)
+
+```
+
+*Table 5: Probability of observing the obtained, or more extreme, amount of evidence for each hypothesis given the presence or absence of dyadic embeddedness if there would not be a network control effect in the population.*
+
+```{r}
+#| label: pvals-dyadic
+#| message: false
+#| echo: false
+left_join(sim, bfs, 
+          by = c("Study", "Hypothesis", "DyadicEmb"), 
+          copy = TRUE,
+          suffix = c("sim", "obs")) |>
+  mutate(Hypothesis = factor(Hypothesis, 
+                                    levels = c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE)) |>
+  group_by(Sim, Hypothesis, DyadicEmb) |>
+  summarize(across(c(`$BF_{i,u}$sim`, `$BF_{i,c}$sim`, `$BF_{i,u}$obs`, `$BF_{i,c}$obs`), prod)) |>
+  group_by(Hypothesis, DyadicEmb) |>
+  summarize(`$P(BF_{null, u} > BF_{obs, u})$` = mean(`$BF_{i,u}$sim` > `$BF_{i,u}$obs`),
+            `$P(BF_{null, c} > BF_{obs, c})$` = mean(`$BF_{i,c}$sim` > `$BF_{i,c}$obs`)) |>
+  mutate(Embeddedness = ifelse(DyadicEmb, "Dyadic", "No Dyadic")) |>
+  select(Hypothesis, Embeddedness, 
+         `$P(BF_{null, u} > BF_{obs, u})$`, 
+         `$P(BF_{null, c} > BF_{obs, c})$`) |>
+  knitr::kable(booktabs = TRUE, digits = 3, escape = FALSE)
+```
+
+
+
+# Appendix 1 - Robustness analyses with multilevel models {.appendix}
+
+Next to the main analyses with cluster-robust standard errors, we ran hierarchical linear models with random intercepts, accounting for clustering at the individual level (i.e., individuals making multiple decisions), session level (because individuals played within the same session) or both.
+If individuals did not play prior to a single round of interest, we did not account for the multilevel structure. 
+These analyses reveal hardly any differences with the main analyses of interest (Table A.1). 
+Moreover, the aggregated evidence is also very similar to the results obtained from the original analyses (Table A.2).
+
+*Table A1.1: Proportions of trustfulness, trustworthiness and cooperation in the different embeddedness conditions in the individual studies, with corresponding Bayes factors estimating using hierarchical logistic regression models.*
+
+```{r}
+#| label: robustness
+#| echo: false
+#| message: false
+#| tbl-colwidths: [45, 25, 13, 13, 13, 15]
+
+bf_robust <- purrr::map_dfr(res, \(x) {
+  if (length(x) < 3) {
+    if (exists("robust", x$coop)) {
+      tibble(Hypothesis = "Cooperation",
+             `$BF_{i,u}$` = x$coop$robust$bf$fit$BF.u[1],
+             `$BF_{i,c}$` = x$coop$robust$bf$fit$BF.c[1])
+    } else {
+      tibble(Hypothesis = "Cooperation", 
+             `$BF_{i,u}$` = x$coop$bf$fit$BF.u[1],
+             `$BF_{i,c}$` = x$coop$bf$fit$BF.c[1])
+    }
+
+  } else {
+    if (exists("robust", x$tf)) {
+      bind_rows(
+        Trustfulness = tibble(`$BF_{i,u}$` = x$tf$robust$bf$fit$BF.u[1], 
+                              `$BF_{i,c}$` = x$tf$robust$bf$fit$BF.c[1]),
+        Trustworthiness = tibble(`$BF_{i,u}$` = x$tw$robust$bf$fit$BF.u[1], 
+                                 `$BF_{i,c}$` = x$tw$robust$bf$fit$BF.c[1]),
+        .id = "Hypothesis"
+      )
+    } else {
+      bind_rows(
+        Trustfulness = tibble(`$BF_{i,u}$` = x$tf$bf$fit$BF.u[1], 
+                              `$BF_{i,c}$` = x$tf$bf$fit$BF.c[1]),
+        Trustworthiness = tibble(`$BF_{i,u}$` = x$tw$bf$fit$BF.u[1], 
+                                 `$BF_{i,c}$` = x$tw$bf$fit$BF.c[1]),
+        .id = "Hypothesis"
+      )
+    }
+  }
+}, .id = "Study") |>
+  mutate(Hypothesis = factor(Hypothesis,
+                                    levels = c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE))
+
+left_join(comb_props, 
+          bf_robust, 
+          by = c("Hypothesis", "Study")) |>
+  mutate(Study = gsub(".rds", "", Study) |> gsub(pattern = "_", replacement = " "),
+         Study = paste0("$~~~$", Study),
+         Year = as.numeric(stringr::str_extract(Study, "[0-9]+")[[1]])) |>
+  bind_rows(
+    tibble(
+      Study = c("*Trustfulness*", "*Trustworthiness*", "*Cooperation*"),
+      Hypothesis = factor(c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE),
+      NoEmb = c(NA, NA, NA),
+      Emb = NoEmb,
+      `$BF_{i,u}$` = NoEmb,
+      `$BF_{i,c}$` = NoEmb,
+      Year = c(0,0,0)
+    )
+  ) |>
+  arrange(Hypothesis, Year) |>
+  select(-c(Hypothesis, Year)) |>
+  knitr::kable(format = "simple", digits = 2)
+```
+
+*Table A1.2: Aggregated Bayes factors for each hypothesis over the relevant studies against the unconstrained hypothesis ($BF_{i,u}$) and the complement hypothesis ($BF_{i,c}$).*
+
+```{r}
+#| label: robustness-aggregate
+#| echo: false
+#| message: false
+tibble(
+  Subset = c("Trustfulness", "Trustworthiness", "Cooperation"),
+  `$BF_{i,u}$` = c(bf_robust |> filter(Hypothesis == "Trustfulness") |> 
+                     pull(`$BF_{i,u}$`) |> prod(),
+                   bf_robust |> filter(Hypothesis == "Trustworthiness") |> 
+                     pull(`$BF_{i,u}$`) |> prod(),
+                   bf_robust |> filter(Hypothesis == "Cooperation") |> 
+                     pull(`$BF_{i,u}$`) |> prod()),
+  `$BF_{i,c}$` = c(bf_robust |> filter(Hypothesis == "Trustfulness") |> 
+                     pull(`$BF_{i,c}$`) |> prod(),
+                   bf_robust |> filter(Hypothesis == "Trustworthiness") |> 
+                     pull(`$BF_{i,c}$`) |> prod(),
+                   bf_robust |> filter(Hypothesis == "Cooperation") |> 
+                     pull(`$BF_{i,c}$`) |> prod())
+) |>
+  knitr::kable(booktabs = TRUE, digits = 2)
+```
+
+# Appendix 2 - Analyses on first-first rounds where applicable {.appendix}
+
+*Table A2.1: Proportions of trustfulness, trustworthiness and cooperation in the different embeddedness conditions in the individual studies, with corresponding Bayes factors when focusing on the first game in each session.*
+
+```{r}
+#| label: robustness-ffr
+#| echo: false
+#| message: false
+#| tbl-colwidths: [45, 25, 13, 13, 13, 15]
+
+bf_ffr <- purrr::map_dfr(res, \(x) {
+  if (length(x) < 3) {
+    if (exists("ffr", x$coop)) {
+      tibble(Hypothesis = "Cooperation",
+             NoEmb = x$coop$ffr$prop[1,2,drop=TRUE],
+             Emb = x$coop$ffr$prop[2,2,drop=TRUE],
+             `$BF_{i,u}$` = x$coop$ffr$bf$fit$BF.u[1],
+             `$BF_{i,c}$` = x$coop$ffr$bf$fit$BF.c[1])
+    } else {
+      tibble(Hypothesis = "Cooperation", 
+             NoEmb = x$coop$prop[1,2,drop=TRUE],
+             Emb = x$coop$prop[2,2,drop=TRUE],
+             `$BF_{i,u}$` = x$coop$bf$fit$BF.u[1],
+             `$BF_{i,c}$` = x$coop$bf$fit$BF.c[1])
+    }
+
+  } else {
+    if (exists("ffr", x$tf)) {
+      bind_rows(
+        Trustfulness = tibble(NoEmb = x$tf$ffr$prop[1,2,drop=TRUE],
+                              Emb = x$tf$ffr$prop[2,2,drop=TRUE],
+                              `$BF_{i,u}$` = x$tf$ffr$bf$fit$BF.u[1], 
+                              `$BF_{i,c}$` = x$tf$ffr$bf$fit$BF.c[1]),
+        Trustworthiness = tibble(NoEmb = x$tw$ffr$prop[1,2,drop=TRUE],
+                                 Emb = x$tw$ffr$prop[2,2,drop=TRUE],
+                                 `$BF_{i,u}$` = x$tw$ffr$bf$fit$BF.u[1], 
+                                 `$BF_{i,c}$` = x$tw$ffr$bf$fit$BF.c[1]),
+        .id = "Hypothesis"
+      )
+    } else {
+      bind_rows(
+        Trustfulness = tibble(NoEmb = x$tf$prop[1,2,drop=TRUE],
+                              Emb = x$tf$prop[2,2,drop=TRUE],
+                              `$BF_{i,u}$` = x$tf$bf$fit$BF.u[1], 
+                              `$BF_{i,c}$` = x$tf$bf$fit$BF.c[1]),
+        Trustworthiness = tibble(NoEmb = x$tw$prop[1,2,drop=TRUE],
+                                 Emb = x$tw$prop[2,2,drop=TRUE],
+                                 `$BF_{i,u}$` = x$tw$bf$fit$BF.u[1], 
+                                 `$BF_{i,c}$` = x$tw$bf$fit$BF.c[1]),
+        .id = "Hypothesis"
+      )
+    }
+  }
+}, .id = "Study") |>
+  mutate(Hypothesis = factor(Hypothesis,
+                                    levels = c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE))
+
+left_join(comb_props |> select(-c(NoEmb, Emb)), 
+          bf_ffr, 
+          by = c("Hypothesis", "Study")) |>
+  mutate(Study = gsub(".rds", "", Study) |> gsub(pattern = "_", replacement = " "),
+         Study = paste0("$~~~$", Study),
+         Year = as.numeric(stringr::str_extract(Study, "[0-9]+")[[1]])) |>
+  bind_rows(
+    tibble(
+      Study = c("*Trustfulness*", "*Trustworthiness*", "*Cooperation*"),
+      Hypothesis = factor(c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    c("Trustfulness", "Trustworthiness", "Cooperation"),
+                                    ordered = TRUE),
+      NoEmb = c(NA, NA, NA),
+      Emb = NoEmb,
+      `$BF_{i,u}$` = NoEmb,
+      `$BF_{i,c}$` = NoEmb,
+      Year = c(0,0,0)
+    )
+  ) |>
+  arrange(Hypothesis, Year) |>
+  select(-c(Hypothesis, Year)) |>
+  knitr::kable(format = "simple", digits = 2)
+```
+
+*Table A1.2: Aggregated Bayes factors for each hypothesis over the relevant studies against the unconstrained hypothesis ($BF_{i,u}$) and the complement hypothesis ($BF_{i,c}$).*
+
+```{r}
+#| label: ffr-aggregate
+#| echo: false
+#| message: false
+tibble(
+  Subset = c("Trustfulness", "Trustworthiness", "Cooperation"),
+  `$BF_{i,u}$` = c(bf_ffr |> filter(Hypothesis == "Trustfulness") |> 
+                     pull(`$BF_{i,u}$`) |> prod(),
+                   bf_ffr |> filter(Hypothesis == "Trustworthiness") |> 
+                     pull(`$BF_{i,u}$`) |> prod(),
+                   bf_ffr |> filter(Hypothesis == "Cooperation") |> 
+                     pull(`$BF_{i,u}$`) |> prod()),
+  `$BF_{i,c}$` = c(bf_ffr |> filter(Hypothesis == "Trustfulness") |> 
+                     pull(`$BF_{i,c}$`) |> prod(),
+                   bf_ffr |> filter(Hypothesis == "Trustworthiness") |> 
+                     pull(`$BF_{i,c}$`) |> prod(),
+                   bf_ffr |> filter(Hypothesis == "Cooperation") |> 
+                     pull(`$BF_{i,c}$`) |> prod())
+) |>
+  knitr::kable(booktabs = TRUE, digits = 2)
+```
+
